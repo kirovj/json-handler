@@ -1,28 +1,96 @@
 package json_handler
 
-const (
-	SPACE         = 32  // 空格
-	COLON         = 58  // 冒号
-	COMMA         = 44  // 逗号
-	DOUBLE_QUOTE  = 34  // 双引号
-	SINGLE_QUOTE  = 39  // 单引号
-	OPEN_BRACKET  = 91  // 左中括号
-	CLOSE_BRACKET = 93  // 右中括号
-	OPEN_CURLY    = 123 // 左花括号
-	CLOSE_CURLY   = 125 // 右花括号
+import (
+	"strings"
 )
 
-var example = "{\"store\":{\"book\":[{\"category\":\"小说\",\"author\":\"鲁迅\",\"title\":\"呐喊\",\"price\":12.99},{\"category\":\"\\u5c0f\\u8bf4\",\"author\":\"\\u9c81\\u8fc5\",\"title\":\"\\u5450\\u558a\",\"price\":12.99},{\"category\":\"reference\",\"author\":\"NigelRees\",\"title\":\"SayingsoftheCentury\",\"price\":8.95}],\"bicycle\":{\"color\":\"red\",\"price\":19.95}},\"expensive\":10}"
+const (
+	Space        = 32  // 空格
+	Colon        = 58  // 冒号
+	Comma        = 44  // 逗号
+	DoubleQuote  = 34  // 双引号
+	SingleQuote  = 39  // 单引号
+	OpenBracket  = 91  // 左中括号
+	CloseBracket = 93  // 右中括号
+	OpenCurly    = 123 // 左花括号
+	CloseCurly   = 125 // 右花括号
+	Backslash    = 92  // 反斜杠
+	NewlineN     = 10  // \n
+	NewlineR     = 13  // \r\n
+)
 
-func handle(s string) {
-	//for idx, char := range s {
-	//	println(idx, char)
-	//}
-	for i := 0; i < len(s); i++ {
-		println(i, s[i])
+//func init() {
+//	switch runtime.GOOS {
+//	case "windows":
+//		Bash = BashWin
+//	case "linux":
+//		Bash = BashLinux
+//	}
+//}
+
+type Handler struct {
+	//idx     int
+	ch          chan int32
+	current     int32
+	last        int32
+	result      string
+	unicos      []int32
+	ignoreSpace bool
+	insideQuote bool
+	builder     strings.Builder
+}
+
+func NewHandler() *Handler {
+	return &Handler{
+		ch:      make(chan int32, 1),
+		builder: strings.Builder{},
 	}
 }
 
-func main() {
-	handle(example)
+func (h *Handler) appendCurrent() {
+	h.builder.WriteRune(h.current)
+}
+
+func (h *Handler) appendLast() {
+	h.builder.WriteRune(h.last)
+}
+
+func (h *Handler) append(r rune) {
+	h.builder.WriteRune(r)
+}
+
+func (h *Handler) handle(s string) {
+	h.builder = strings.Builder{}
+	for _, char := range s {
+		h.current = char
+		h.handleSingle()
+		h.last = char
+	}
+}
+
+func (h *Handler) handleSingle() {
+	switch h.last {
+	case OpenCurly | OpenBracket:
+		h.append(NewlineN)
+		h.ignoreSpace = true
+	case CloseCurly | CloseBracket:
+		h.ignoreSpace = true
+	case DoubleQuote | SingleQuote:
+		h.ignoreSpace = false
+	case Colon:
+		h.append(Space)
+		h.ignoreSpace = true
+	case Space:
+		if !h.ignoreSpace {
+			h.appendCurrent()
+		}
+	case NewlineN | NewlineR:
+	default:
+		h.appendCurrent()
+	}
+}
+
+func main(s string) {
+	h := NewHandler()
+	h.handle(s)
 }
