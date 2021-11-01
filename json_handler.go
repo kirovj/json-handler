@@ -42,7 +42,7 @@ type Handler struct {
 
 func NewHandler() *Handler {
 	return &Handler{
-		ch:      make(chan int32, 1),
+		ch:      make(chan int32),
 		builder: strings.Builder{},
 	}
 }
@@ -60,12 +60,13 @@ func (h *Handler) append(r rune) {
 }
 
 func (h *Handler) handle(s string) {
-	h.builder = strings.Builder{}
-	for _, char := range s {
-		h.current = char
-		h.handleSingle()
-		h.last = char
-	}
+	// go func() {
+	// 	for _, char := range s {
+	// 		h.push(char)
+	// 	}
+	// 	h.ch <- -1
+	// }
+
 }
 
 func (h *Handler) handleSingle() {
