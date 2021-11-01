@@ -19,15 +19,6 @@ const (
 	NewlineR     = 13  // \r\n
 )
 
-//func init() {
-//	switch runtime.GOOS {
-//	case "windows":
-//		Bash = BashWin
-//	case "linux":
-//		Bash = BashLinux
-//	}
-//}
-
 type Handler struct {
 	//idx     int
 	ch          chan int32
@@ -37,13 +28,15 @@ type Handler struct {
 	unicos      []int32
 	ignoreSpace bool
 	insideQuote bool
+	escape      bool
 	builder     strings.Builder
 }
 
 func NewHandler() *Handler {
 	return &Handler{
-		ch:      make(chan int32),
-		builder: strings.Builder{},
+		ch:          make(chan int32),
+		builder:     strings.Builder{},
+		ignoreSpace: true,
 	}
 }
 
@@ -60,24 +53,50 @@ func (h *Handler) append(r rune) {
 }
 
 func (h *Handler) handle(s string) {
-	// go func() {
-	// 	for _, char := range s {
-	// 		h.push(char)
-	// 	}
-	// 	h.ch <- -1
-	// }
+	go func() {
+		for _, char := range s {
+			h.ch <- char
+		}
+		h.ch <- -1
+	}()
 
+	for {
+		if flag := h.innerHandle(); flag == -1 {
+			break
+		}
+	}
 }
 
-func (h *Handler) handleSingle() {
+func (h *Handler) innerHandle() int32 {
+	defer func() {
+		h.last = h.current
+	}()
+
+	h.current = <-h.ch
+	if h.escape {
+		if h.current == 'u' {
+			// todo
+		} else {
+			h.appendLast()
+			h.appendCurrent()
+			return h.current
+		}
+	}
+
 	switch h.last {
 	case OpenCurly | OpenBracket:
 		h.append(NewlineN)
-		h.ignoreSpace = true
 	case CloseCurly | CloseBracket:
-		h.ignoreSpace = true
 	case DoubleQuote | SingleQuote:
-		h.ignoreSpace = false
+		if !h.insideQuote && !h.escape {
+			h.insideQuote = true
+			h.ignoreSpace = false
+			h.appendCurrent()
+			break
+		}
+		if h.insideQuote {
+
+		}
 	case Colon:
 		h.append(Space)
 		h.ignoreSpace = true
@@ -86,9 +105,10 @@ func (h *Handler) handleSingle() {
 			h.appendCurrent()
 		}
 	case NewlineN | NewlineR:
-	default:
-		h.appendCurrent()
+	case Backslash:
+		h.escape = true
 	}
+	return h.current
 }
 
 func main(s string) {
