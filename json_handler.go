@@ -1,31 +1,31 @@
 package json_handler
 
 import (
+	"strconv"
 	"strings"
 )
 
 const (
-	Space        = 32  // 空格
-	Colon        = 58  // 冒号
-	Comma        = 44  // 逗号
-	DoubleQuote  = 34  // 双引号
-	SingleQuote  = 39  // 单引号
-	OpenBracket  = 91  // 左中括号
-	CloseBracket = 93  // 右中括号
-	OpenCurly    = 123 // 左花括号
-	CloseCurly   = 125 // 右花括号
-	Backslash    = 92  // 反斜杠
+	Space        = 32  // space
+	Colon        = 58  // :
+	Comma        = 44  // ,
+	Quote        = 34  // "
+	OpenBracket  = 91  // [
+	CloseBracket = 93  // ]
+	OpenCurly    = 123 // {
+	CloseCurly   = 125 // }
+	Backslash    = 92  // \
 	NewlineN     = 10  // \n
-	NewlineR     = 13  // \r\n
+	NewlineR     = 13  // \r
+	UnicodeFlag  = 'u' // u
+	End          = -1  // end of json
 )
 
 type Handler struct {
-	//idx     int
 	ch          chan int32
 	current     int32
 	last        int32
 	result      string
-	unicos      []int32
 	ignoreSpace bool
 	insideQuote bool
 	escape      bool
@@ -40,16 +40,26 @@ func NewHandler() *Handler {
 	}
 }
 
-func (h *Handler) appendCurrent() {
+func (h *Handler) appendCurrent() *Handler {
 	h.builder.WriteRune(h.current)
+	return h
 }
 
-func (h *Handler) appendLast() {
+func (h *Handler) appendLast() *Handler {
 	h.builder.WriteRune(h.last)
+	return h
 }
 
-func (h *Handler) append(r rune) {
+func (h *Handler) append(r rune) *Handler {
 	h.builder.WriteRune(r)
+	return h
+}
+
+func (h *Handler) extend(runes *[]rune) *Handler {
+	for _, r := range *runes {
+		h.append(r)
+	}
+	return h
 }
 
 func (h *Handler) handle(s string) {
@@ -57,11 +67,11 @@ func (h *Handler) handle(s string) {
 		for _, char := range s {
 			h.ch <- char
 		}
-		h.ch <- -1
+		h.ch <- End
 	}()
 
 	for {
-		if flag := h.innerHandle(); flag == -1 {
+		if flag := h.innerHandle(); flag == End {
 			break
 		}
 	}
@@ -73,21 +83,12 @@ func (h *Handler) innerHandle() int32 {
 	}()
 
 	h.current = <-h.ch
-	if h.escape {
-		if h.current == 'u' {
-			// todo
-		} else {
-			h.appendLast()
-			h.appendCurrent()
-			return h.current
-		}
-	}
 
 	switch h.last {
 	case OpenCurly | OpenBracket:
 		h.append(NewlineN)
 	case CloseCurly | CloseBracket:
-	case DoubleQuote | SingleQuote:
+	case Quote:
 		if !h.insideQuote && !h.escape {
 			h.insideQuote = true
 			h.ignoreSpace = false
@@ -106,9 +107,40 @@ func (h *Handler) innerHandle() int32 {
 		}
 	case NewlineN | NewlineR:
 	case Backslash:
-		h.escape = true
+		if h.insideQuote {
+			// only in quotes backslash is useful
+			if h.current == UnicodeFlag {
+				// start parse unicode like \u....
+				var unicos []rune
+				for i := 0; i < 4; i++ {
+					char := <-h.ch
+					unicos = append(unicos, char)
+					if char == End {
+						break
+					}
+				}
+				if len(unicos) == 4 {
+					if val, err := parseUnicode(string(unicos)); err != nil {
+						h.current = val
+						h.appendCurrent()
+						return h.current
+					}
+				}
+				// if parse unicode failed or len of unicos != 4
+				h.append(Backslash).append(UnicodeFlag).extend(&unicos)
+				h.current = unicos[len(unicos)-1]
+			}
+		}
 	}
 	return h.current
+}
+
+func parseUnicode(hex string) (int32, error) {
+	val, err := strconv.ParseUint(hex, 16, 32)
+	if err == nil {
+		return rune(val), err
+	}
+	return 0, err
 }
 
 func main(s string) {
