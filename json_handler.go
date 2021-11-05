@@ -62,7 +62,14 @@ func (h *Handler) extend(runes *[]rune) *Handler {
 	return h
 }
 
-func (h *Handler) handle(s string) {
+func (h *Handler) handle(s string) string {
+
+	// invalid json string
+	if len(s) < 2 {
+		return ""
+	}
+
+	// start push single rune to chan
 	go func() {
 		for _, char := range s {
 			h.ch <- char
@@ -70,11 +77,10 @@ func (h *Handler) handle(s string) {
 		h.ch <- End
 	}()
 
-	for {
-		if flag := h.innerHandle(); flag == End {
-			break
-		}
+	// pull rune from chan
+	for flag := h.innerHandle(); flag != End; {
 	}
+	return h.builder.String()
 }
 
 func (h *Handler) innerHandle() int32 {
@@ -88,28 +94,29 @@ func (h *Handler) innerHandle() int32 {
 	case OpenCurly | OpenBracket:
 		h.append(NewlineN)
 	case CloseCurly | CloseBracket:
+		// todo pull until , " } ]
 	case Quote:
-		if !h.insideQuote && !h.escape {
-			h.insideQuote = true
-			h.ignoreSpace = false
-			h.appendCurrent()
-			break
-		}
-		if h.insideQuote {
-
-		}
+		// pull from chan until close quote
+		return h.handleValue()
 	case Colon:
 		h.append(Space)
 		h.ignoreSpace = true
-	case Space:
-		if !h.ignoreSpace {
-			h.appendCurrent()
+	case Comma:
+		h.appendCurrent()
+	}
+	return h.current
+}
+
+func (h *Handler) handleValue() int32 {
+	for r := <-h.ch; ; {
+		if r == End {
+			return End
 		}
-	case NewlineN | NewlineR:
-	case Backslash:
-		if h.insideQuote {
-			// only in quotes backslash is useful
-			if h.current == UnicodeFlag {
+
+		h.current = r
+		// only in value backslash is useful
+		if r == Backslash {
+			if next := <-h.ch; next == UnicodeFlag {
 				// start parse unicode like \u....
 				var unicos []rune
 				for i := 0; i < 4; i++ {
@@ -119,7 +126,8 @@ func (h *Handler) innerHandle() int32 {
 						break
 					}
 				}
-				if len(unicos) == 4 {
+				h.current = unicos[len(unicos)-1]
+				if len(unicos) == 4 && h.current != End {
 					if val, err := parseUnicode(string(unicos)); err != nil {
 						h.current = val
 						h.appendCurrent()
@@ -128,7 +136,15 @@ func (h *Handler) innerHandle() int32 {
 				}
 				// if parse unicode failed or len of unicos != 4
 				h.append(Backslash).append(UnicodeFlag).extend(&unicos)
-				h.current = unicos[len(unicos)-1]
+			} else {
+				h.append(next)
+			}
+		} else {
+			h.appendCurrent()
+			if r == Quote {
+				if h.last != Backslash {
+					break
+				}
 			}
 		}
 	}
