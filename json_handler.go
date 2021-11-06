@@ -21,22 +21,23 @@ const (
 	End          = -1 // end of json
 )
 
+func isWhiteSpace(r rune) bool {
+	return r == Space || r == NewlineN || r == NewlineR
+}
+
 type Handler struct {
-	ch          chan rune
-	current     rune
-	last        rune
-	result      string
-	ignoreSpace bool
-	insideQuote bool
-	escape      bool
-	builder     strings.Builder
+	ch      chan rune
+	pos     int
+	current rune
+	last    rune
+	result  string
+	builder strings.Builder
 }
 
 func NewHandler() *Handler {
 	return &Handler{
-		ch:          make(chan rune),
-		builder:     strings.Builder{},
-		ignoreSpace: true,
+		ch:      make(chan rune),
+		builder: strings.Builder{},
 	}
 }
 
@@ -50,6 +51,11 @@ func (h *Handler) extend(runes *[]rune) *Handler {
 		h.append(r)
 	}
 	return h
+}
+
+func (h *Handler) next() rune {
+	h.pos++
+	return <-h.ch
 }
 
 func (h *Handler) handle(s string) string {
@@ -77,11 +83,12 @@ func (h *Handler) innerHandle() rune {
 		h.last = h.current
 	}()
 
-	h.current = <-h.ch
+	h.current = h.next()
 
 	switch h.last {
 	case OpenCurly | OpenBracket:
 		h.append(NewlineN)
+		// todo pull until "
 	case CloseCurly | CloseBracket:
 		// todo pull until , " } ]
 	case Quote:
@@ -89,7 +96,14 @@ func (h *Handler) innerHandle() rune {
 		return h.handleValue(true)
 	case Colon:
 		h.append(Space)
-		h.ignoreSpace = true
+		for r := h.next(); ; {
+			if isWhiteSpace(r) {
+				continue
+			}
+			if r == Quote {
+				h.handleValue(true)
+			}
+		}
 	case Comma:
 		h.append(h.current)
 	}
@@ -97,7 +111,7 @@ func (h *Handler) innerHandle() rune {
 }
 
 func (h *Handler) handleValue(inQuote bool) rune {
-	for r := <-h.ch; ; {
+	for r := h.next(); ; {
 		if r == End {
 			return End
 		}
@@ -105,11 +119,11 @@ func (h *Handler) handleValue(inQuote bool) rune {
 		h.current = r
 		// only in value backslash is useful
 		if r == Backslash {
-			if next := <-h.ch; next == UnicodeFlag {
+			if next := h.next(); next == UnicodeFlag {
 				// start parse unicode like \u....
 				var unicos []rune
 				for i := 0; i < 4; i++ {
-					char := <-h.ch
+					char := h.next()
 					unicos = append(unicos, char)
 					if char == End {
 						break
