@@ -6,25 +6,25 @@ import (
 )
 
 const (
-	Space        = 32  // space
-	Colon        = 58  // :
-	Comma        = 44  // ,
-	Quote        = 34  // "
-	OpenBracket  = 91  // [
-	CloseBracket = 93  // ]
-	OpenCurly    = 123 // {
-	CloseCurly   = 125 // }
-	Backslash    = 92  // \
-	NewlineN     = 10  // \n
-	NewlineR     = 13  // \r
-	UnicodeFlag  = 'u' // u
-	End          = -1  // end of json
+	Space        = ' '
+	Colon        = ':'
+	Comma        = ','
+	Quote        = '"'
+	OpenBracket  = '['
+	CloseBracket = ']'
+	OpenCurly    = '{'
+	CloseCurly   = '}'
+	Backslash    = '\\'
+	NewlineN     = '\n'
+	NewlineR     = '\r'
+	UnicodeFlag  = 'u'
+	End          = -1 // end of json
 )
 
 type Handler struct {
-	ch          chan int32
-	current     int32
-	last        int32
+	ch          chan rune
+	current     rune
+	last        rune
 	result      string
 	ignoreSpace bool
 	insideQuote bool
@@ -34,20 +34,10 @@ type Handler struct {
 
 func NewHandler() *Handler {
 	return &Handler{
-		ch:          make(chan int32),
+		ch:          make(chan rune),
 		builder:     strings.Builder{},
 		ignoreSpace: true,
 	}
-}
-
-func (h *Handler) appendCurrent() *Handler {
-	h.builder.WriteRune(h.current)
-	return h
-}
-
-func (h *Handler) appendLast() *Handler {
-	h.builder.WriteRune(h.last)
-	return h
 }
 
 func (h *Handler) append(r rune) *Handler {
@@ -63,7 +53,6 @@ func (h *Handler) extend(runes *[]rune) *Handler {
 }
 
 func (h *Handler) handle(s string) string {
-
 	// invalid json string
 	if len(s) < 2 {
 		return ""
@@ -83,7 +72,7 @@ func (h *Handler) handle(s string) string {
 	return h.builder.String()
 }
 
-func (h *Handler) innerHandle() int32 {
+func (h *Handler) innerHandle() rune {
 	defer func() {
 		h.last = h.current
 	}()
@@ -97,17 +86,17 @@ func (h *Handler) innerHandle() int32 {
 		// todo pull until , " } ]
 	case Quote:
 		// pull from chan until close quote
-		return h.handleValue()
+		return h.handleValue(true)
 	case Colon:
 		h.append(Space)
 		h.ignoreSpace = true
 	case Comma:
-		h.appendCurrent()
+		h.append(h.current)
 	}
 	return h.current
 }
 
-func (h *Handler) handleValue() int32 {
+func (h *Handler) handleValue(inQuote bool) rune {
 	for r := <-h.ch; ; {
 		if r == End {
 			return End
@@ -130,7 +119,7 @@ func (h *Handler) handleValue() int32 {
 				if len(unicos) == 4 && h.current != End {
 					if val, err := parseUnicode(string(unicos)); err != nil {
 						h.current = val
-						h.appendCurrent()
+						h.append(val)
 						return h.current
 					}
 				}
@@ -140,7 +129,7 @@ func (h *Handler) handleValue() int32 {
 				h.append(next)
 			}
 		} else {
-			h.appendCurrent()
+			h.append(h.current)
 			if r == Quote {
 				if h.last != Backslash {
 					break
@@ -151,7 +140,7 @@ func (h *Handler) handleValue() int32 {
 	return h.current
 }
 
-func parseUnicode(hex string) (int32, error) {
+func parseUnicode(hex string) (rune, error) {
 	val, err := strconv.ParseUint(hex, 16, 32)
 	if err == nil {
 		return rune(val), err
