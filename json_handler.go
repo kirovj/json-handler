@@ -58,6 +58,13 @@ func (h *Handler) extend(runes *[]rune) *Handler {
 	return h
 }
 
+func (h *Handler) indent() *Handler {
+	for i := 0; i < h.level; i++ {
+		h.append(Space).append(Space)
+	}
+	return h
+}
+
 func (h *Handler) next() rune {
 	h.pos++
 	return <-h.ch
@@ -65,7 +72,7 @@ func (h *Handler) next() rune {
 
 func (h *Handler) handle(s string) string {
 	// invalid json string
-	if len(s) < 2 {
+	if len(s) <= 2 {
 		return ""
 	}
 
@@ -94,10 +101,10 @@ func (h *Handler) innerHandle() rune {
 	switch h.current {
 	case OpenCurly | OpenBracket:
 		h.level++
-		h.append(h.current).append(NewlineN)
+		h.append(h.current).append(NewlineN).indent()
 		for {
 			r := h.next()
-			if r == Quote || r == End {
+			if !isWhiteSpace(r) {
 				h.current = r
 				break
 			}
