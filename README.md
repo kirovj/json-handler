@@ -1,2 +1,2 @@
 # jsonfmt
-JSON string formatter with no 3rd libraries.
+JSON string formatter with no third party dependency.
